@@ -240,9 +240,7 @@ def render_dashboard(data, filters):
         render_basic_top_performers(data)
     
     st.markdown("---")
-    
-    # 4. Additional Analytics (if enabled)
-    render_additional_analytics(data, filters)
+
 
 def render_time_range_indicator(filters):
     """Show active time range and filters"""
