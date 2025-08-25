@@ -43,25 +43,29 @@ def apply_filters(data, filters):
     
     filtered_data = data.copy()
     
-    # Date filters - perbaiki handling datetime
+    # Date filters - perbaiki handling datetime  
     date_col = safe_col(filtered_data, COLUMN_MAPPINGS["created_at"])
     if date_col and date_col in filtered_data.columns:
         # Ensure datetime column is properly converted
         filtered_data[date_col] = pd.to_datetime(filtered_data[date_col], errors='coerce', utc=True)
         
-        if filters.get('date_from'):
-            try:
-                date_from = pd.to_datetime(filters['date_from'], utc=True)
-                filtered_data = filtered_data[filtered_data[date_col] >= date_from]
-            except Exception as e:
-                st.warning(f"Date from filter error: {e}")
-                
-        if filters.get('date_to'):
-            try:
-                date_to = pd.to_datetime(filters['date_to'], utc=True) + pd.Timedelta(days=1)
-                filtered_data = filtered_data[filtered_data[date_col] < date_to]
-            except Exception as e:
-                st.warning(f"Date to filter error: {e}")
+        # Apply date range filters (only for custom range)
+        if filters.get('time_range') == 'custom':
+            if filters.get('date_from'):
+                try:
+                    date_from = pd.to_datetime(filters['date_from'], utc=True)
+                    filtered_data = filtered_data[filtered_data[date_col] >= date_from]
+                except Exception as e:
+                    st.warning(f"Date from filter error: {e}")
+                    
+            if filters.get('date_to'):
+                try:
+                    date_to = pd.to_datetime(filters['date_to'], utc=True) + pd.Timedelta(days=1)
+                    filtered_data = filtered_data[filtered_data[date_col] < date_to]
+                except Exception as e:
+                    st.warning(f"Date to filter error: {e}")
+        
+        # For other time ranges, filtering is handled in the winrate calculator
     
     # Pair filter
     if filters.get('pair_filter', '').strip():
@@ -70,6 +74,9 @@ def apply_filters(data, filters):
             filtered_data = filtered_data[
                 filtered_data["pair"].str.upper().isin(pairs)
             ]
+    
+    # Store data count in session state for sidebar
+    st.session_state.data_count = len(filtered_data)
     
     return filtered_data
 
