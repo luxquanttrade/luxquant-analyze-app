@@ -32,7 +32,7 @@ COLORS = {
     "text_muted": "#6B6B6B"
 }
 
-# Enhanced CSS for dark theme with metric cards
+# Enhanced CSS for dark theme with responsive design
 st.markdown("""
 <style>
 .stApp { 
@@ -69,6 +69,43 @@ st.markdown("""
     border-radius: 12px;
     padding: 20px;
     margin: 10px 0;
+}
+
+/* Responsive chart fixes */
+.js-plotly-plot .plotly .main-svg {
+    width: 100% !important;
+    height: auto !important;
+}
+
+.js-plotly-plot .plotly .svg-container {
+    width: 100% !important;
+    height: 400px !important;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    .js-plotly-plot .plotly .main-svg {
+        height: 350px !important;
+    }
+    
+    [data-testid="metric-container"] {
+        padding: 10px;
+        margin: 5px 0;
+    }
+    
+    .metric-card {
+        padding: 15px;
+        margin: 5px 0;
+    }
+}
+
+/* Fix for plotly responsiveness */
+.plotly-graph-div {
+    width: 100% !important;
+}
+
+.plotly .main-svg {
+    overflow: visible !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -122,12 +159,12 @@ def main():
             st.error("No data loaded from database")
             return
         
-        # Process signals
-        with st.spinner("Processing signals..."):
+        # Process signals with standardization
+        with st.spinner("Processing and standardizing data..."):
             processed_data = process_signals(raw_data)
         
         if processed_data is None or processed_data.empty:
-            st.warning("No data after processing")
+            st.warning("No data after processing and standardization")
             return
         
         # Apply filters (includes pair filtering and custom date range)
