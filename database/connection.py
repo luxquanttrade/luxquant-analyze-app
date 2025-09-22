@@ -1,269 +1,270 @@
 """
-Database connection and data loading logic - Streamlit Cloud Version
-Optimized for cloud deployment with proper secrets management
+Database connection and data loading logic — Streamlit Cloud Ready
+VPS Setup: PostgreSQL 12 on port 5433 with SSL enabled
+Updated to match test connection configuration
 """
 import os
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
+from urllib.parse import quote_plus
 from config.settings import TABLE_MAPPINGS
 
 try:
-    import psycopg2
+    import psycopg2  # noqa: F401
     POSTGRES_AVAILABLE = True
 except ImportError:
     POSTGRES_AVAILABLE = False
 
 def get_connection_string():
     """
-    Get database connection string for Streamlit Cloud deployment
-    Priority: Streamlit Secrets → Environment Variables → Error
+    Ambil connection URL dari Streamlit Secrets atau ENV.
+    Format sesuai dengan test connection yang sudah berhasil.
     """
-    # 1) Streamlit Cloud secrets (primary method for deployment)
+    # 1) Streamlit secrets (priority untuk Cloud deployment)
     try:
-        # Check if running in Streamlit Cloud environment
-        if hasattr(st, 'secrets') and 'database' in st.secrets:
-            # Method 1: Full connection URL in secrets
-            if 'connection_url' in st.secrets['database']:
-                url = st.secrets['database']['connection_url']
-                if url and url.strip():
-                    return url.strip()
-            
-            # Method 2: Individual components in secrets
-            if all(key in st.secrets['database'] for key in ['host', 'port', 'database', 'username', 'password']):
-                host = st.secrets['database']['host']
-                port = st.secrets['database']['port']
-                database = st.secrets['database']['database']
-                username = st.secrets['database']['username']
-                password = st.secrets['database']['password']
-                
-                return f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}"
-                
-    except Exception as e:
-        st.warning(f"Failed to read Streamlit secrets: {e}")
-
-    # 2) Environment variables (fallback for local development)
-    db_url = os.getenv("DATABASE_URL")
-    if db_url and db_url.strip():
-        return db_url.strip()
-    
-    # Individual environment variables
-    try:
-        host = os.getenv("DB_HOST")
-        port = os.getenv("DB_PORT", "5432")
-        database = os.getenv("DB_NAME")
-        username = os.getenv("DB_USER")
-        password = os.getenv("DB_PASSWORD")
-        
-        if all([host, database, username, password]):
-            return f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}"
+        url = st.secrets["database"]["connection_url"]
+        if url and url.strip():
+            return url.strip()
     except Exception:
         pass
     
-    # 3) No valid connection found
+    # 2) Individual components dari secrets (alternative method)
+    try:
+        if hasattr(st, 'secrets') and 'database' in st.secrets:
+            db_config = st.secrets['database']
+            if all(key in db_config for key in ['host', 'port', 'database', 'username', 'password']):
+                host = db_config['host']
+                port = db_config['port']
+                database = db_config['database']
+                username = db_config['username']
+                password = db_config['password']
+                
+                # URL-encode password untuk handling karakter spesial
+                pwd_enc = quote_plus(str(password))
+                return f"postgresql+psycopg2://{username}:{pwd_enc}@{host}:{port}/{database}?sslmode=require"
+    except Exception:
+        pass
+
+    # 3) ENV (untuk dev lokal)
+    db_url = os.getenv("DATABASE_URL")
+    if db_url and db_url.strip():
+        return db_url.strip()
+
+    # 4) Tidak dikonfigurasi - tidak ada fallback localhost untuk Cloud
     return None
 
+def make_engine(conn_str: str):
+    """
+    Factory SQLAlchemy Engine dengan setelan yang sama seperti test connection.
+    Menggunakan konfigurasi yang telah terbukti berhasil.
+    """
+    return create_engine(
+        conn_str,
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=30,
+        pool_recycle=3600,
+        connect_args={"sslmode": "require", "connect_timeout": 10},
+    )
+
 def get_connection_status():
-    """Check database connection status with enhanced error reporting"""
-    
-    # Check if PostgreSQL dependencies are available
+    """
+    Cek koneksi DB dengan test yang sama seperti di test script.
+    Memberikan informasi detail tentang koneksi.
+    """
     if not POSTGRES_AVAILABLE:
         return {
-            'connected': False, 
-            'error': 'Missing PostgreSQL dependencies. Please ensure psycopg2-binary is installed.',
-            'error_type': 'dependency_missing'
+            "connected": False,
+            "error": "Missing PostgreSQL deps. Install: psycopg2-binary, sqlalchemy",
         }
-    
-    # Get connection string
-    connection_string = get_connection_string()
-    if not connection_string:
+
+    conn_str = get_connection_string()
+    if not conn_str:
         return {
-            'connected': False,
-            'error': 'No database configuration found. Please check Streamlit secrets or environment variables.',
-            'error_type': 'config_missing',
-            'help': 'Add database configuration to .streamlit/secrets.toml or set environment variables'
+            "connected": False,
+            "error": "No DB connection configured. Set [database].connection_url in Streamlit secrets atau DATABASE_URL env.",
         }
-    
-    # Test actual database connection
+
     try:
-        # Create engine with connection pooling for cloud deployment
-        engine = create_engine(
-            connection_string,
-            pool_size=1,  # Minimal pool for Streamlit Cloud
-            max_overflow=0,
-            pool_timeout=30,
-            pool_recycle=3600,  # Recycle connections every hour
-            connect_args={
-                "sslmode": "require",  # Force SSL for cloud databases
-                "connect_timeout": 10,
-            }
-        )
-        
-        # Test connection
+        engine = make_engine(conn_str)
         with engine.connect() as conn:
-            result = conn.execute(text("SELECT 1 as test"))
-            test_result = result.fetchone()
+            # Test query yang sama seperti di test script
+            result = conn.execute(text("SELECT current_user, inet_client_addr(), version(), now()"))
+            row = result.fetchone()
             
-            # Get database info
-            db_info = conn.execute(text("SELECT version()")).fetchone()
-            
-        return {
-            'connected': True,
-            'connection_string': connection_string[:50] + "...",  # Masked for security
-            'test_result': 'Connection successful',
-            'database_version': str(db_info[0]) if db_info else 'Unknown',
-            'ssl_enabled': True
-        }
+            if row:
+                current_user = row[0]
+                client_addr = row[1] 
+                version_info = row[2].splitlines()[0] if row[2] else "Unknown"
+                server_time = row[3]
+                
+                return {
+                    "connected": True, 
+                    "connection_string": mask_connection_string(conn_str), 
+                    "test_result": "Connection successful",
+                    "current_user": current_user,
+                    "client_addr": str(client_addr) if client_addr else "Unknown",
+                    "server_version": version_info,
+                    "server_time": str(server_time),
+                    "ssl_enabled": True
+                }
+            else:
+                return {
+                    "connected": False,
+                    "error": "Connection test query returned no data"
+                }
         
     except Exception as e:
-        error_msg = str(e)
-        error_type = 'connection_failed'
-        
-        # Categorize common errors for better user guidance
-        if 'timeout' in error_msg.lower():
-            error_type = 'timeout'
-            help_msg = 'Database connection timeout. Check if the database server is accessible.'
-        elif 'authentication' in error_msg.lower() or 'password' in error_msg.lower():
-            error_type = 'auth_failed'
-            help_msg = 'Authentication failed. Check username and password in secrets.'
-        elif 'host' in error_msg.lower() or 'resolve' in error_msg.lower():
-            error_type = 'host_unreachable'
-            help_msg = 'Cannot reach database host. Check hostname and port in configuration.'
-        elif 'ssl' in error_msg.lower():
-            error_type = 'ssl_error'
-            help_msg = 'SSL connection issue. Ensure your database supports SSL connections.'
-        else:
-            help_msg = 'Check your database configuration and network connectivity.'
+        msg = str(e).lower()
+        hint = None
+        if "timeout" in msg:
+            hint = "Timeout. Cek ufw allow 5433 dan pg_hba.conf di VPS."
+        elif "ssl" in msg:
+            hint = "SSL issue. Pastikan sslmode=require & server Postgres ssl=on."
+        elif "password" in msg or "authentication" in msg:
+            hint = "Auth gagal. Cek username/password secrets. Password: 'PasswordReaderKuat!'"
+        elif "could not translate host name" in msg or "host" in msg:
+            hint = "Host tidak bisa di-resolve. Pastikan IP VPS benar: 141.11.25.194"
+        elif "connection refused" in msg:
+            hint = "Connection refused. Cek PostgreSQL running di port 5433 dan firewall."
+        elif "role" in msg and "does not exist" in msg:
+            hint = "User luxq_readonly belum dibuat. Jalankan CREATE USER di VPS."
         
         return {
-            'connected': False,
-            'error': f'Database connection failed: {error_msg}',
-            'error_type': error_type,
-            'help': help_msg,
-            'connection_string_masked': connection_string[:20] + "..." if connection_string else None
+            "connected": False, 
+            "error": f"DB connect failed: {e}", 
+            "hint": hint,
+            "connection_string": mask_connection_string(conn_str)
         }
 
-@st.cache_data(show_spinner=False, ttl=300)  # Cache for 5 minutes in cloud
-def load_data():
-    """
-    Load data from database with optimized caching for Streamlit Cloud
-    """
-    connection_status = get_connection_status()
-    
-    if not connection_status['connected']:
-        st.error(f"❌ Database Error: {connection_status['error']}")
-        if 'help' in connection_status:
-            st.info(f"💡 Help: {connection_status['help']}")
-        return None
+def mask_connection_string(conn_str):
+    """Mask password dalam connection string untuk keamanan logging."""
+    if not conn_str:
+        return "None"
     
     try:
-        # Create engine with cloud-optimized settings
-        connection_string = get_connection_string()
-        engine = create_engine(
-            connection_string,
-            pool_size=1,
-            max_overflow=0,
-            pool_timeout=30,
-            pool_recycle=3600,
-            connect_args={
-                "sslmode": "require",
-                "connect_timeout": 10,
-            }
-        )
+        # Hide password: postgresql://user:password@host:port/db
+        if '://' in conn_str and '@' in conn_str:
+            protocol_part = conn_str.split('://')[0]
+            remainder = conn_str.split('://')[1]
+            
+            if '@' in remainder:
+                user_pass_part = remainder.split('@')[0]
+                host_db_part = remainder.split('@')[1]
+                
+                if ':' in user_pass_part:
+                    user = user_pass_part.split(':')[0]
+                    return f"{protocol_part}://{user}:***@{host_db_part}"
+                else:
+                    return f"{protocol_part}://{user_pass_part}@{host_db_part}"
         
-        result = {"__metadata__": {"loaded_at": pd.Timestamp.now()}}
-        
-        # Get available tables
-        with engine.connect() as conn:
-            tables_query = text("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public'
-            ORDER BY table_name
-            """)
-            tables_result = conn.execute(tables_query)
-            table_names = [row[0] for row in tables_result]
-            result["__tables__"] = table_names
+        return conn_str[:30] + "***"
+    except:
+        return "***masked***"
 
-        # Load tables based on mappings with progress indication
+@st.cache_data(show_spinner=False, ttl=300)  # Cache 5 menit untuk Cloud
+def load_data():
+    """Muat data dari DB (cache 5 menit untuk Cloud)."""
+    status = get_connection_status()
+    if not status["connected"]:
+        st.error(f"❌ Database Error: {status['error']}")
+        if status.get("hint"):
+            st.info(f"💡 Hint: {status['hint']}")
+        return None
+
+    try:
+        engine = make_engine(get_connection_string())
+        result = {"__tables__": [], "__metadata__": {"loaded_at": pd.Timestamp.now()}}
+
+        # Daftar tabel public
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                ORDER BY table_name
+            """)).fetchall()
+        table_names = [r[0] for r in rows]
+        result["__tables__"] = table_names
+
+        # Muat tabel sesuai mapping
         tables_loaded = 0
-        for key, possible_names in TABLE_MAPPINGS.items():
-            for table_name in possible_names:
-                if table_name in table_names:
+        for key, candidates in TABLE_MAPPINGS.items():
+            for tbl in candidates:
+                if tbl in table_names:
                     try:
-                        # Use chunked loading for large tables in cloud environment
-                        df = pd.read_sql_table(
-                            table_name, 
-                            engine,
-                            # Add any additional cloud-specific optimizations here
-                        )
-                        
+                        df = pd.read_sql_table(tbl, engine)
                         result[key] = df
                         tables_loaded += 1
-                        
-                        # Log successful table load
-                        st.success(f"✅ Loaded table '{table_name}' as '{key}': {len(df)} rows")
+                        st.success(f"✅ Loaded '{tbl}' as '{key}': {len(df)} rows")
                         break
-                        
                     except Exception as e:
-                        st.warning(f"⚠️ Could not load table {table_name}: {e}")
+                        st.warning(f"⚠️ Could not load table {tbl}: {e}")
                         continue
 
-        # Add metadata
         result["__metadata__"]["tables_loaded"] = tables_loaded
-        result["__metadata__"]["total_tables_available"] = len(table_names)
         
         if tables_loaded == 0:
-            st.warning("⚠️ No tables were successfully loaded")
-            
+            st.warning("⚠️ No tables were loaded successfully")
+
         return result
-        
+
     except Exception as e:
         st.error(f"❌ Database loading failed: {e}")
-        
-        # Provide specific guidance based on error type
-        if 'timeout' in str(e).lower():
-            st.info("💡 Try refreshing the page or check your internet connection")
-        elif 'memory' in str(e).lower():
-            st.info("💡 Database query too large for Streamlit Cloud limits")
-        
         return None
 
-def safe_read_table(table_name, engine, chunk_size=None):
-    """
-    Safely read a database table with cloud optimizations
-    """
+def safe_read_table(table_name, engine):
+    """Helper aman untuk baca satu tabel."""
     try:
-        if chunk_size:
-            # For large tables, read in chunks
-            chunks = []
-            for chunk in pd.read_sql_table(table_name, engine, chunksize=chunk_size):
-                chunks.append(chunk)
-            return pd.concat(chunks, ignore_index=True)
-        else:
-            return pd.read_sql_table(table_name, engine)
-            
+        return pd.read_sql_table(table_name, engine)
     except Exception as e:
-        st.warning(f"⚠️ Could not load table {table_name}: {e}")
+        st.warning(f"Could not load table {table_name}: {e}")
         return None
 
-def test_database_connection():
-    """
-    Test database connection for debugging purposes
-    """
-    st.subheader("🔍 Database Connection Test")
+# Debug function untuk troubleshooting deployment
+def debug_connection_info():
+    """Show connection debug information untuk troubleshooting."""
+    st.subheader("🔍 Connection Debug Info")
     
-    # Show connection method being used
-    connection_string = get_connection_string()
-    if connection_string:
-        # Mask sensitive information
-        masked_connection = connection_string.split('@')[0].split('//')[-1].split(':')[0] + "@" + connection_string.split('@')[1] if '@' in connection_string else "Invalid format"
-        st.info(f"🔗 Using connection: {masked_connection}")
+    # Environment detection
+    is_cloud = (
+        os.getenv('STREAMLIT_SHARING') or 
+        os.getenv('STREAMLIT_CLOUD') or
+        'streamlit.io' in os.getenv('HOSTNAME', '')
+    )
+    st.info(f"**Environment:** {'Streamlit Cloud ☁️' if is_cloud else 'Local/VPS 🖥️'}")
+    
+    # Connection string info (masked)
+    conn_str = get_connection_string()
+    if conn_str:
+        st.info(f"**Connection:** {mask_connection_string(conn_str)}")
+        
+        # Show if SSL is required
+        if 'sslmode=require' in conn_str:
+            st.success("✅ SSL mode: require (secure)")
+        elif 'ssl' in conn_str:
+            st.info("ℹ️ SSL mode: detected in connection string")
+        else:
+            st.warning("⚠️ SSL mode: not specified")
     else:
-        st.error("❌ No connection string available")
+        st.error("❌ No connection string configured")
         return
     
-    # Test connection status
+    # Secrets availability
+    try:
+        has_secrets = hasattr(st, 'secrets') and 'database' in st.secrets
+        if has_secrets:
+            st.success("✅ Streamlit Secrets: Available")
+            # Check if it's the readonly user
+            if 'luxq_readonly' in conn_str:
+                st.info("🔒 Using readonly user (recommended)")
+        else:
+            st.error("❌ Streamlit Secrets: Not Found")
+    except Exception as e:
+        st.error(f"❌ Streamlit Secrets: Error accessing - {e}")
+    
+    # Connection test
     with st.spinner("Testing database connection..."):
         status = get_connection_status()
     
@@ -272,57 +273,104 @@ def test_database_connection():
         
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Connection Status", "Connected ✅")
-            if 'database_version' in status:
-                st.info(f"Database: {status['database_version'][:50]}...")
+            st.metric("Status", "Connected ✅")
+            if 'server_info' in status:
+                st.info(f"**Server:** {status['server_info']}")
         
         with col2:
-            st.metric("SSL Enabled", "Yes ✅" if status.get('ssl_enabled') else "No ❌")
+            if status.get('ssl_enabled'):
+                st.metric("SSL", "Enabled ✅")
+            st.info("**Port:** 5433 (Custom)")
         
         # Test data loading
         with st.spinner("Testing data loading..."):
             try:
                 data = load_data()
-                if data:
+                if data and '__tables__' in data:
                     st.success(f"✅ Data loading successful!")
-                    if '__tables__' in data:
-                        st.info(f"📊 Available tables: {', '.join(data['__tables__'])}")
+                    tables = data['__tables__']
+                    st.info(f"**Available tables:** {', '.join(tables) if tables else 'None'}")
+                    
+                    # Show loaded data summary
+                    if 'signals' in data:
+                        signals_count = len(data['signals'])
+                        st.metric("Signals Table", f"{signals_count:,} rows")
+                    
+                    if 'updates' in data:
+                        updates_count = len(data['updates'])
+                        st.metric("Updates Table", f"{updates_count:,} rows")
+                        
                 else:
                     st.warning("⚠️ Data loading returned empty result")
             except Exception as e:
                 st.error(f"❌ Data loading failed: {e}")
     else:
         st.error("❌ Database connection failed!")
-        st.error(f"Error: {status['error']}")
-        if 'help' in status:
-            st.info(f"💡 {status['help']}")
+        st.error(f"**Error:** {status['error']}")
+        if 'hint' in status:
+            st.info(f"💡 **Hint:** {status['hint']}")
+        
+        # Common troubleshooting steps
+        st.markdown("### 🔧 Troubleshooting Steps:")
+        st.markdown("""
+        1. **Verify VPS IP:** Pastikan 141.11.25.194 accessible
+        2. **Check Firewall:** `sudo ufw status` - port 5433 open?
+        3. **PostgreSQL Status:** `sudo systemctl status postgresql@12-main`
+        4. **Test from external:** `psql "postgresql://luxq_readonly:PASSWORD@141.11.25.194:5433/luxquant?sslmode=require"`
+        5. **Check Secrets:** Connection URL format benar dan URL-encoded?
+        """)
 
-# Streamlit Cloud specific configuration checker
-def check_streamlit_cloud_config():
-    """
-    Check if the app is properly configured for Streamlit Cloud
-    """
-    issues = []
-    warnings = []
+# Checklist function untuk pre-deployment verification
+def run_deployment_checklist():
+    """Run pre-deployment checklist."""
+    st.subheader("🚀 Deployment Checklist")
     
-    # Check if secrets are available
-    try:
-        if hasattr(st, 'secrets') and 'database' in st.secrets:
-            if 'connection_url' in st.secrets['database'] or all(key in st.secrets['database'] for key in ['host', 'database', 'username', 'password']):
-                pass  # Config looks good
-            else:
-                issues.append("Database secrets are incomplete")
+    checklist_items = []
+    
+    # 1. PostgreSQL dependencies
+    if POSTGRES_AVAILABLE:
+        checklist_items.append("✅ PostgreSQL dependencies available")
+    else:
+        checklist_items.append("❌ PostgreSQL dependencies missing")
+    
+    # 2. Connection configuration
+    conn_str = get_connection_string()
+    if conn_str:
+        if 'luxq_readonly' in conn_str:
+            checklist_items.append("✅ Using readonly user (secure)")
         else:
-            warnings.append("No Streamlit secrets found - using environment variables")
-    except Exception:
-        warnings.append("Could not access Streamlit secrets")
+            checklist_items.append("⚠️ Not using readonly user")
+            
+        if 'sslmode=require' in conn_str:
+            checklist_items.append("✅ SSL mode required (secure)")
+        else:
+            checklist_items.append("⚠️ SSL mode not enforced")
+            
+        if '141.11.25.194:5433' in conn_str:
+            checklist_items.append("✅ Correct VPS IP and port")
+        else:
+            checklist_items.append("⚠️ Check VPS IP and port")
+    else:
+        checklist_items.append("❌ No connection string configured")
     
-    # Check dependencies
-    if not POSTGRES_AVAILABLE:
-        issues.append("psycopg2-binary not available")
+    # 3. Connection test
+    status = get_connection_status()
+    if status['connected']:
+        checklist_items.append("✅ Database connection successful")
+    else:
+        checklist_items.append(f"❌ Database connection failed: {status.get('error', 'Unknown')}")
     
-    return {
-        'issues': issues,
-        'warnings': warnings,
-        'is_cloud_ready': len(issues) == 0
-    }
+    # Display checklist
+    for item in checklist_items:
+        st.write(item)
+    
+    # Overall status
+    passed = sum(1 for item in checklist_items if item.startswith('✅'))
+    total = len(checklist_items)
+    
+    if passed == total:
+        st.success(f"🎉 All checks passed ({passed}/{total})! Ready for deployment.")
+    else:
+        st.warning(f"⚠️ {passed}/{total} checks passed. Please fix issues before deployment.")
+    
+    return passed == total
