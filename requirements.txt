@@ -1,11 +1,28 @@
-streamlit>=1.28.0
-pandas>=1.5.0
-numpy>=1.24.0
-plotly>=5.15.0
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
-joblib>=1.3.0
-scikit-learn>=1.3.0
-openpyxl>=3.1.0
-xlsxwriter>=3.1.0
-python-dateutil>=2.8.0
+# requirements.txt for Streamlit Cloud - Optimal ML Compatibility
+# Core Streamlit and data processing
+streamlit>=1.28.0,<2.0.0
+pandas>=1.5.0,<2.1.0
+numpy>=1.24.0,<1.26.0
+plotly>=5.15.0,<6.0.0
+
+# Database connectivity - REQUIRED for PostgreSQL
+sqlalchemy>=2.0.0,<2.1.0
+psycopg2-binary>=2.9.0,<3.0.0
+
+# Machine Learning - Pinned versions for maximum compatibility
+scikit-learn==1.3.2
+joblib==1.3.2
+scipy>=1.10.0,<1.12.0
+threadpoolctl>=3.1.0,<4.0.0
+
+# Additional utilities
+python-dateutil>=2.8.0,<3.0.0
+urllib3>=1.26.0,<2.0.0
+
+# Optional dependencies for enhanced features
+openpyxl>=3.1.0,<4.0.0
+xlsxwriter>=3.1.0,<4.0.0
+
+# Ensure no conflicts
+setuptools>=65.0.0
+wheel>=0.40.0
