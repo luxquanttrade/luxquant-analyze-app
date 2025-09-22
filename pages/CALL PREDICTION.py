@@ -1,6 +1,7 @@
 """
-🔮 Call Prediction - LuxQuant Pro v2
+🔮 Call Prediction - LuxQuant Pro v2 (Optimal Version)
 AI-powered analysis and recommendations for trading calls
+Enhanced with robust error handling and graceful degradation
 """
 import streamlit as st
 import pandas as pd
@@ -19,36 +20,67 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Model Loading
-try:
-    from joblib import load
-    
-    @st.cache_resource
-    def load_tp_bundle():
-        """Load the ML model bundle"""
-        possible_paths = [
-            "luxquant_tp_twostagенew_bundle.joblib",
+# Enhanced Model Loading with Robust Error Handling
+ML_BUNDLE = None
+ML_ERROR_MESSAGE = ""
+ML_STATUS = "loading"
+
+@st.cache_resource
+def load_ml_model_safe():
+    """
+    Safe ML model loading with comprehensive error handling
+    Returns (model, status, error_message)
+    """
+    try:
+        from joblib import load
+        
+        # Possible model file locations
+        model_paths = [
             "luxquant_tp_twostage_bundle.joblib",
+            "luxquant_tp_twostagенew_bundle.joblib",
+            "models/luxquant_tp_twostage_bundle.joblib",
+            "assets/luxquant_tp_twostage_bundle.joblib",
+            "./luxquant_tp_twostage_bundle.joblib"
         ]
         
-        for path in possible_paths:
+        for path in model_paths:
             try:
-                bundle = load(path)
-                st.success(f"✅ ML Model loaded: {path}")
-                return bundle
+                if os.path.exists(path):
+                    bundle = load(path)
+                    
+                    # Validate model structure
+                    required_keys = ['pipe_A', 'pipe_B', 'pipe_C', 'num_cols', 'cat_cols']
+                    if all(key in bundle for key in required_keys):
+                        return bundle, "loaded", f"Model loaded from: {path}"
+                    else:
+                        continue
+                        
             except FileNotFoundError:
                 continue
             except Exception as e:
-                st.warning(f"⚠️ Error loading {path}: {str(e)}")
-                continue
+                error_msg = str(e)
+                if any(term in error_msg.lower() for term in ['sklearn', 'version', 'attribute', 'module']):
+                    # Try compatibility fix for sklearn version issues
+                    try:
+                        import importlib
+                        import sklearn.compose._column_transformer
+                        importlib.reload(sklearn.compose._column_transformer)
+                        bundle = load(path)
+                        return bundle, "loaded_compat", f"Model loaded (compatibility mode): {path}"
+                    except:
+                        continue
+                else:
+                    continue
         
-        st.error("❌ Could not load ML model file")
-        return None
-    
-    ML_BUNDLE = load_tp_bundle()
-except ImportError:
-    st.error("❌ joblib not available")
-    ML_BUNDLE = None
+        return None, "not_found", "Model file not found in any expected location"
+        
+    except ImportError:
+        return None, "no_joblib", "joblib library not available"
+    except Exception as e:
+        return None, "error", f"Unexpected error: {str(e)}"
+
+# Initialize ML model
+ML_BUNDLE, ML_STATUS, ML_ERROR_MESSAGE = load_ml_model_safe()
 
 # Import modules with error handling
 try:
@@ -58,7 +90,7 @@ try:
     from config.theme import COLORS, CUSTOM_CSS
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 except ImportError:
-    # Fallback colors
+    # Fallback colors if theme import fails
     COLORS = {
         "green": "#00D46A",
         "red": "#FF4747", 
@@ -68,180 +100,202 @@ except ImportError:
         "background": "#0E1117"
     }
 
-# Text parsing patterns
+# Enhanced Text Parsing Patterns
 PAIR_PAT = re.compile(r"NEW\s*CALL:\s*([A-Z0-9_]+USDT)", re.IGNORECASE)
 VOL_PAT = re.compile(r"Volume\(24H\)\s*Ranked:\s*(?:🏅\s*)?(\d+)(?:st|nd|rd|th)?/(\d+)", re.IGNORECASE)
 RISK_PAT = re.compile(r"Risk\s*Level\s*[:\-]?\s*(?:⚠️\s*)?([A-Za-z]+)", re.IGNORECASE)
 ENTRY_PAT = re.compile(r"Entry\s*:\s*([0-9]+(?:[\.,][0-9]+)?)", re.IGNORECASE)
 
 def parse_call_text(call_text: str):
-    """Parse trading call text and extract data"""
-    text = call_text.replace("**", " ").replace("__", " ").strip()
-    
-    # Extract pair
-    m = PAIR_PAT.search(text)
-    if not m:
-        m = re.search(r"\b([A-Z0-9]{2,}USDT)\b", text)
-    pair = m.group(1).upper() if m else None
+    """Enhanced trading call text parsing with better error handling"""
+    try:
+        text = call_text.replace("**", " ").replace("__", " ").strip()
+        
+        # Extract pair
+        m = PAIR_PAT.search(text)
+        if not m:
+            m = re.search(r"\b([A-Z0-9]{2,}USDT)\b", text)
+        pair = m.group(1).upper() if m else None
 
-    # Extract entry price
-    m = ENTRY_PAT.search(text)
-    entry = float(m.group(1).replace(",", ".")) if m else None
+        # Extract entry price
+        m = ENTRY_PAT.search(text)
+        entry = float(m.group(1).replace(",", ".")) if m else None
 
-    # Extract volume ranking
-    m = VOL_PAT.search(text)
-    vol_num = int(m.group(1)) if m else None
-    vol_den = int(m.group(2)) if m else None
+        # Extract volume ranking
+        m = VOL_PAT.search(text)
+        vol_num = int(m.group(1)) if m else None
+        vol_den = int(m.group(2)) if m else None
 
-    # Extract risk level
-    risk = None
-    m = RISK_PAT.search(text)
-    if m:
-        raw = m.group(1).strip().lower()
-        if "high" in raw or "tinggi" in raw or "red" in raw:
-            risk = "High"
-        elif "medium" in raw or "mid" in raw or "yellow" in raw:
-            risk = "Medium"
-        elif "low" in raw or "rendah" in raw or "green" in raw or "normal" in raw:
-            risk = "Low"
+        # Extract risk level
+        risk = None
+        m = RISK_PAT.search(text)
+        if m:
+            raw = m.group(1).strip().lower()
+            if any(term in raw for term in ["high", "tinggi", "red"]):
+                risk = "High"
+            elif any(term in raw for term in ["medium", "mid", "yellow"]):
+                risk = "Medium"
+            elif any(term in raw for term in ["low", "rendah", "green", "normal"]):
+                risk = "Low"
 
-    # Extract targets
-    target_patterns = [
-        r'Target\s*1\s*[\s]*([0-9]+(?:[\.,][0-9]+)?)',
-        r'Target\s*2\s*[\s]*([0-9]+(?:[\.,][0-9]+)?)',
-        r'Target\s*3\s*[\s]*([0-9]+(?:[\.,][0-9]+)?)',
-        r'Target\s*4\s*[\s]*([0-9]+(?:[\.,][0-9]+)?)'
-    ]
-    
-    targets = {}
-    for i, pattern in enumerate(target_patterns, 1):
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            targets[i] = float(match.group(1).replace(',', '.'))
+        # Extract targets with enhanced patterns
+        target_patterns = [
+            r'Target\s*1\s*:?\s*([0-9]+(?:[\.,][0-9]+)?)',
+            r'Target\s*2\s*:?\s*([0-9]+(?:[\.,][0-9]+)?)',
+            r'Target\s*3\s*:?\s*([0-9]+(?:[\.,][0-9]+)?)',
+            r'Target\s*4\s*:?\s*([0-9]+(?:[\.,][0-9]+)?)'
+        ]
+        
+        targets = {}
+        for i, pattern in enumerate(target_patterns, 1):
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                targets[i] = float(match.group(1).replace(',', '.'))
 
-    # Extract stops
-    stop_patterns = [
-        r'Stop\s*Loss\s*1\s*[\s]*([0-9]+(?:[\.,][0-9]+)?)',
-        r'Stop\s*Loss\s*2\s*[\s]*([0-9]+(?:[\.,][0-9]+)?)'
-    ]
-    
-    stops = {}
-    for i, pattern in enumerate(stop_patterns, 1):
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            stops[i] = float(match.group(1).replace(',', '.'))
+        # Extract stops
+        stop_patterns = [
+            r'Stop\s*Loss\s*1\s*:?\s*([0-9]+(?:[\.,][0-9]+)?)',
+            r'Stop\s*Loss\s*2\s*:?\s*([0-9]+(?:[\.,][0-9]+)?)'
+        ]
+        
+        stops = {}
+        for i, pattern in enumerate(stop_patterns, 1):
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                stops[i] = float(match.group(1).replace(',', '.'))
 
-    return {
-        "pair": pair,
-        "entry": entry,
-        "volume_rank_num": vol_num,
-        "volume_rank_den": vol_den,
-        "risk_level": risk,
-        "targets": targets,
-        "stops": stops
-    }
+        return {
+            "pair": pair,
+            "entry": entry,
+            "volume_rank_num": vol_num,
+            "volume_rank_den": vol_den,
+            "risk_level": risk,
+            "targets": targets,
+            "stops": stops,
+            "parsing_success": True
+        }
+        
+    except Exception as e:
+        return {
+            "pair": None,
+            "entry": None,
+            "volume_rank_num": None,
+            "volume_rank_den": None,
+            "risk_level": None,
+            "targets": {},
+            "stops": {},
+            "parsing_success": False,
+            "parsing_error": str(e)
+        }
 
 def build_feature_row_from_text(parsed: dict, num_cols, cat_cols):
-    """Build feature row for ML model"""
-    if not ML_BUNDLE:
-        return pd.DataFrame(), {}
-    
-    # Basic features
-    volume_rank_score = np.nan
-    if parsed.get("volume_rank_num") and parsed.get("volume_rank_den"):
-        if parsed["volume_rank_den"] > 0:
-            volume_rank_score = 1 - (parsed["volume_rank_num"] / parsed["volume_rank_den"])
-    
-    risk_map = {"Low": 0, "Medium": 1, "High": 2}
-    risk_num = risk_map.get(parsed.get("risk_level"), np.nan)
+    """Build feature row for ML model with enhanced validation"""
+    try:
+        if not parsed.get('parsing_success', False):
+            return pd.DataFrame(), {}
+        
+        # Basic features with safe calculations
+        volume_rank_score = np.nan
+        if parsed.get("volume_rank_num") and parsed.get("volume_rank_den"):
+            if parsed["volume_rank_den"] > 0:
+                volume_rank_score = 1 - (parsed["volume_rank_num"] / parsed["volume_rank_den"])
+        
+        risk_map = {"Low": 0, "Medium": 1, "High": 2}
+        risk_num = risk_map.get(parsed.get("risk_level"), np.nan)
 
-    entry = parsed.get("entry", np.nan)
-    targets = parsed.get("targets", {})
-    stops = parsed.get("stops", {})
+        entry = parsed.get("entry", np.nan)
+        targets = parsed.get("targets", {})
+        stops = parsed.get("stops", {})
 
-    # Initialize feature row
-    row = {
-        "entry": entry,
-        "volume_rank_score": volume_rank_score,
-        "risk_num": risk_num,
-        "hour": np.nan,
-        "dow": np.nan,
-        "pair": parsed.get("pair"),
-    }
+        # Initialize feature row
+        row = {
+            "entry": entry,
+            "volume_rank_score": volume_rank_score,
+            "risk_num": risk_num,
+            "hour": np.nan,
+            "dow": np.nan,
+            "pair": parsed.get("pair"),
+        }
 
-    # Target percentage features
-    for i in range(1, 5):
-        if i in targets and entry and not np.isnan(entry):
-            row[f"tp{i}_pct"] = ((targets[i] - entry) / entry) * 100
-        else:
-            row[f"tp{i}_pct"] = np.nan
-
-    # Stop loss percentage features
-    for i in range(1, 3):
-        if i in stops and entry and not np.isnan(entry):
-            row[f"sl{i}_pct"] = ((stops[i] - entry) / entry) * 100
-        else:
-            row[f"sl{i}_pct"] = np.nan
-
-    # Risk-Reward ratios
-    sl1 = stops.get(1)
-    if sl1 and entry and not np.isnan(entry):
-        risk_amount = abs(entry - sl1)
+        # Target percentage features
         for i in range(1, 5):
-            if i in targets:
-                reward_amount = abs(targets[i] - entry)
-                row[f"RR{i}"] = reward_amount / risk_amount if risk_amount > 0 else np.nan
+            if i in targets and entry and not np.isnan(entry) and entry > 0:
+                row[f"tp{i}_pct"] = ((targets[i] - entry) / entry) * 100
             else:
+                row[f"tp{i}_pct"] = np.nan
+
+        # Stop loss percentage features
+        for i in range(1, 3):
+            if i in stops and entry and not np.isnan(entry) and entry > 0:
+                row[f"sl{i}_pct"] = ((stops[i] - entry) / entry) * 100
+            else:
+                row[f"sl{i}_pct"] = np.nan
+
+        # Risk-Reward ratios
+        sl1 = stops.get(1)
+        if sl1 and entry and not np.isnan(entry) and entry > 0:
+            risk_amount = abs(entry - sl1)
+            for i in range(1, 5):
+                if i in targets and risk_amount > 0:
+                    reward_amount = abs(targets[i] - entry)
+                    row[f"RR{i}"] = reward_amount / risk_amount
+                else:
+                    row[f"RR{i}"] = np.nan
+        else:
+            for i in range(1, 5):
                 row[f"RR{i}"] = np.nan
-    else:
-        for i in range(1, 5):
-            row[f"RR{i}"] = np.nan
 
-    # Target spacing features
-    valid_targets = [targets[i] for i in sorted(targets.keys()) if i in targets]
-    if len(valid_targets) >= 2:
-        spacings = [valid_targets[i] - valid_targets[i-1] for i in range(1, len(valid_targets))]
-        row["spacing"] = np.mean(spacings) / entry if entry and not np.isnan(entry) else np.nan
-        row["tightness"] = np.std(spacings) / entry if entry and not np.isnan(entry) and len(spacings) > 1 else np.nan
-    else:
-        row["spacing"] = np.nan
-        row["tightness"] = np.nan
+        # Target spacing features
+        valid_targets = [targets[i] for i in sorted(targets.keys()) if i in targets]
+        if len(valid_targets) >= 2 and entry and not np.isnan(entry) and entry > 0:
+            spacings = [valid_targets[i] - valid_targets[i-1] for i in range(1, len(valid_targets))]
+            row["spacing"] = np.mean(spacings) / entry
+            row["tightness"] = np.std(spacings) / entry if len(spacings) > 1 else np.nan
+        else:
+            row["spacing"] = np.nan
+            row["tightness"] = np.nan
 
-    # Summary statistics
-    tp_values = [row[f"tp{i}_pct"] for i in range(1, 5) if not np.isnan(row[f"tp{i}_pct"])]
-    if tp_values:
-        row["tp_mean"] = np.mean(tp_values)
-        row["tp_max"] = np.max(tp_values)
-        row["tp_std"] = np.std(tp_values) if len(tp_values) > 1 else 0
-    else:
-        row["tp_mean"] = np.nan
-        row["tp_max"] = np.nan
-        row["tp_std"] = np.nan
+        # Summary statistics
+        tp_values = [row[f"tp{i}_pct"] for i in range(1, 5) if not np.isnan(row[f"tp{i}_pct"])]
+        if tp_values:
+            row["tp_mean"] = np.mean(tp_values)
+            row["tp_max"] = np.max(tp_values)
+            row["tp_std"] = np.std(tp_values) if len(tp_values) > 1 else 0
+        else:
+            row["tp_mean"] = np.nan
+            row["tp_max"] = np.nan
+            row["tp_std"] = np.nan
 
-    X = pd.DataFrame([row])
-    
-    # Ensure columns match training data
-    for c in num_cols + cat_cols:
-        if c not in X.columns:
-            X[c] = np.nan
-    
-    return X[num_cols + cat_cols], targets
+        X = pd.DataFrame([row])
+        
+        # Ensure columns match training data
+        for c in num_cols + cat_cols:
+            if c not in X.columns:
+                X[c] = np.nan
+        
+        return X[num_cols + cat_cols], targets
+        
+    except Exception as e:
+        return pd.DataFrame(), {}
 
 def eff_threshold(X_row, base=0.32):
-    """Calculate effective threshold"""
+    """Calculate effective threshold with safe error handling"""
     try:
-        volume_rank_score = X_row.iloc[0].get('volume_rank_score', 0.5) if not X_row.empty else 0.5
-        risk_num = X_row.iloc[0].get('risk_num', 1) if not X_row.empty else 1
-        tp1_pct = X_row.iloc[0].get('tp1_pct', 5) if not X_row.empty else 5
+        if X_row.empty:
+            return base
+            
+        volume_rank_score = X_row.iloc[0].get('volume_rank_score', 0.5)
+        risk_num = X_row.iloc[0].get('risk_num', 1)
+        tp1_pct = X_row.iloc[0].get('tp1_pct', 5)
         
         threshold_adj = 0
         
         # Volume adjustment
-        if volume_rank_score < 0.3:
+        if not np.isnan(volume_rank_score) and volume_rank_score < 0.3:
             threshold_adj += 0.05
         
         # Risk adjustment
-        if risk_num >= 2:
+        if not np.isnan(risk_num) and risk_num >= 2:
             threshold_adj += 0.03
         
         # TP1 adjustment
@@ -253,7 +307,7 @@ def eff_threshold(X_row, base=0.32):
         return base
 
 def predict_min_tp_from_text(call_text: str, bundle: dict):
-    """Predict using ML model"""
+    """Enhanced ML prediction with comprehensive error handling"""
     if bundle is None:
         return {
             "error": "ML model not loaded",
@@ -263,7 +317,23 @@ def predict_min_tp_from_text(call_text: str, bundle: dict):
     
     try:
         parsed = parse_call_text(call_text)
+        
+        if not parsed.get('parsing_success', False):
+            return {
+                "error": f"Call parsing failed: {parsed.get('parsing_error', 'Unknown parsing error')}",
+                "predicted_min_tp": None,
+                "confidence": 0
+            }
+        
         X_row, targets = build_feature_row_from_text(parsed, bundle["num_cols"], bundle["cat_cols"])
+        
+        if X_row.empty:
+            return {
+                "error": "Feature extraction failed",
+                "predicted_min_tp": None,
+                "confidence": 0
+            }
+        
         X_row = X_row.fillna(0)
 
         # Get thresholds
@@ -304,18 +374,20 @@ def predict_min_tp_from_text(call_text: str, bundle: dict):
             "threshold_used_effective": th_eff,
             "confidence": p_hit,
             "targets_parsed": targets,
-            "go_hit_decision": go_hit
+            "go_hit_decision": go_hit,
+            "prediction_success": True
         }
     
     except Exception as e:
         return {
             "error": f"Prediction failed: {str(e)}",
             "predicted_min_tp": None,
-            "confidence": 0
+            "confidence": 0,
+            "prediction_success": False
         }
 
 def get_historical_performance(pair, data):
-    """Get historical performance data"""
+    """Get historical performance data with error handling"""
     try:
         if data is None or data.empty or 'pair' not in data.columns:
             return None
@@ -388,18 +460,10 @@ def render_page_header():
     """, unsafe_allow_html=True)
 
 def render_prediction_sidebar():
-    """Render sidebar controls"""
+    """Render sidebar controls with ML status"""
     st.sidebar.title("🔮 AI Prediction v2")
     
-    st.sidebar.markdown("""
-    **Model v2 Features:**
-    - Two-stage calibrated pipeline
-    - Target structure analysis
-    - Dynamic threshold adjustment
-    - Price recommendation output
-    """)
-    
-    # Model status
+    # Enhanced ML status display
     if ML_BUNDLE:
         st.sidebar.success("🤖 ML Model v2: LOADED")
         try:
@@ -412,9 +476,33 @@ def render_prediction_sidebar():
             st.sidebar.caption(f"Base threshold: {base_threshold:.3f}")
             st.sidebar.caption(f"Policy band: {policy_band:.3f}")
         except:
-            st.sidebar.caption("Model details unavailable")
+            st.sidebar.caption("Model details loaded")
     else:
         st.sidebar.error("❌ ML Model v2: NOT LOADED")
+        st.sidebar.warning(f"Status: {ML_STATUS}")
+        st.sidebar.info(f"Details: {ML_ERROR_MESSAGE}")
+        
+        # Show what's available without ML
+        st.sidebar.markdown("""
+        **🔧 Available Features:**
+        - ✅ Call text parsing
+        - ✅ Historical analysis
+        - ✅ Database connectivity
+        - ✅ Performance metrics
+        
+        **❌ Unavailable:**
+        - ❌ ML predictions
+        - ❌ Price recommendations
+        """)
+    
+    # Model features info
+    st.sidebar.markdown("""
+    **Model v2 Features:**
+    - Two-stage calibrated pipeline
+    - Target structure analysis
+    - Dynamic threshold adjustment
+    - Price recommendation output
+    """)
     
     # Settings
     st.sidebar.subheader("⚙️ Settings")
@@ -480,17 +568,17 @@ Stop Loss 2    2.053      -16.31%
     
     with col2:
         st.markdown("**🆕 Model v2 Features:**")
-        st.info("""
-        ✅ Target structure analysis
-        ✅ Risk-reward ratio calculation
-        ✅ Dynamic threshold adjustment
-        ✅ Price recommendation output
-        ✅ Calibrated probabilities
-        ✅ Policy band system
-        """)
-        
-        st.markdown("**📊 Performance:**")
         if ML_BUNDLE:
+            st.success("""
+            ✅ Target structure analysis
+            ✅ Risk-reward ratio calculation
+            ✅ Dynamic threshold adjustment
+            ✅ Price recommendation output
+            ✅ Calibrated probabilities
+            ✅ Policy band system
+            """)
+            
+            st.markdown("**📊 Performance:**")
             st.success("""
             **Strict Accuracy:** 24.73%
             **Cumulative:** 49.76%
@@ -498,12 +586,20 @@ Stop Loss 2    2.053      -16.31%
             **Stage-C:** ~90%
             """)
         else:
-            st.error("❌ Model v2 not available")
+            st.error("""
+            ❌ ML Model not available
+            
+            **Available:**
+            ✅ Call text parsing
+            ✅ Historical analysis
+            ✅ Database connectivity
+            
+            **Reason:** """ + ML_ERROR_MESSAGE)
 
 def render_ml_prediction(ml_result, settings):
-    """Render ML prediction results"""
-    if 'error' in ml_result:
-        st.error(f"❌ ML Prediction Failed: {ml_result['error']}")
+    """Render ML prediction results with enhanced error handling"""
+    if not ml_result.get('prediction_success', False):
+        st.error(f"❌ ML Prediction Failed: {ml_result.get('error', 'Unknown error')}")
         return
     
     st.subheader("🤖 ML Model v2 Prediction")
@@ -584,27 +680,32 @@ def render_ml_prediction(ml_result, settings):
         with col2:
             st.markdown("**💡 Trading Recommendation:**")
             
-            # Confidence warnings
+            # Enhanced confidence analysis
             if confidence < base_th:
                 st.error("⚠️ **Low Confidence Signal**")
                 st.warning("Model suggests SKIP this trade")
+                st.info("🔍 Consider waiting for higher confidence signals")
             elif not go_hit:
                 st.warning("⚠️ **Cautious Signal**")
                 st.info("Model is uncertain - consider smaller position")
+                st.info("📊 Monitor for confirmation signals")
             else:
                 if pred >= 3:
                     st.success("🚀 **Strong Buy Signal**")
                     st.write("✅ High probability for TP3+ achievement")
                     if price_reco:
                         st.write(f"🎯 Target price: ${price_reco:.4f}")
+                        st.write(f"📈 Expected gain: {change_reco:+.2f}%")
                 elif pred >= 1:
                     st.info("📊 **Moderate Buy Signal**")
                     st.write(f"✅ Model predicts {label} achievement")
                     if price_reco:
                         st.write(f"🎯 Target price: ${price_reco:.4f}")
+                        st.write(f"📈 Expected gain: {change_reco:+.2f}%")
                 else:
                     st.error("🔻 **Avoid Signal**")
                     st.write("❌ High risk of stop loss")
+                    st.write("🛡️ Consider risk management")
             
             # Risk profile adjustments
             if settings['risk_adjustment'] == 'Conservative' and pred >= 2:
@@ -668,115 +769,397 @@ def render_historical_analysis(pair, historical_data):
     st.plotly_chart(fig, use_container_width=True)
 
 def parse_trading_call_simple(call_text):
-    """Simple parsing for compatibility"""
-    parsed = parse_call_text(call_text)
-    return {
-        'pair': parsed.get('pair'),
-        'entry': parsed.get('entry'),
-        'targets': list(parsed.get('targets', {}).values()),
-        'stops': list(parsed.get('stops', {}).values()),
-        'risk_level': parsed.get('risk_level'),
-        'volume_rank': parsed.get('volume_rank_num'),
-        'volume_total': parsed.get('volume_rank_den')
-    }
+    """Simple parsing for compatibility with graceful error handling"""
+    try:
+        parsed = parse_call_text(call_text)
+        return {
+            'pair': parsed.get('pair'),
+            'entry': parsed.get('entry'),
+            'targets': list(parsed.get('targets', {}).values()),
+            'stops': list(parsed.get('stops', {}).values()),
+            'risk_level': parsed.get('risk_level'),
+            'volume_rank': parsed.get('volume_rank_num'),
+            'volume_total': parsed.get('volume_rank_den'),
+            'parsing_success': parsed.get('parsing_success', False)
+        }
+    except Exception as e:
+        return {
+            'pair': None,
+            'entry': None,
+            'targets': [],
+            'stops': [],
+            'risk_level': None,
+            'volume_rank': None,
+            'volume_total': None,
+            'parsing_success': False,
+            'error': str(e)
+        }
+
+def render_parsing_results(parsed_call):
+    """Render parsing results with enhanced display"""
+    if not parsed_call.get('parsing_success', False):
+        st.error("❌ Failed to parse trading call")
+        if 'error' in parsed_call:
+            st.error(f"Error: {parsed_call['error']}")
+        return False
+    
+    st.success("✅ Call parsed successfully!")
+    
+    # Create enhanced display of parsed information
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**📊 Basic Information:**")
+        st.info(f"**Pair:** {parsed_call['pair'] or 'Not found'}")
+        st.info(f"**Entry:** ${parsed_call['entry']:.4f}" if parsed_call['entry'] else "**Entry:** Not found")
+        st.info(f"**Risk Level:** {parsed_call['risk_level'] or 'Not specified'}")
+        
+    with col2:
+        st.markdown("**📈 Volume Analysis:**")
+        if parsed_call['volume_rank'] and parsed_call['volume_total']:
+            vol_score = 1 - (parsed_call['volume_rank'] / parsed_call['volume_total'])
+            st.info(f"**Rank:** {parsed_call['volume_rank']}/{parsed_call['volume_total']}")
+            st.info(f"**Score:** {vol_score:.3f}")
+        else:
+            st.info("**Volume:** Not specified")
+        
+    with col3:
+        st.markdown("**🎯 Targets & Stops:**")
+        targets = parsed_call.get('targets', [])
+        stops = parsed_call.get('stops', [])
+        st.info(f"**Targets:** {len(targets)} levels")
+        st.info(f"**Stops:** {len(stops)} levels")
+        
+        if targets:
+            st.info(f"**Range:** ${min(targets):.4f} - ${max(targets):.4f}")
+    
+    # Show target breakdown if available
+    if targets:
+        st.markdown("**🎯 Target Breakdown:**")
+        target_df = pd.DataFrame({
+            'Level': [f'TP{i+1}' for i in range(len(targets))],
+            'Price': [f'${price:.4f}' for price in targets],
+            'Change %': [f'{((price - parsed_call["entry"]) / parsed_call["entry"] * 100):+.2f}%' 
+                        for price in targets] if parsed_call['entry'] else ['N/A'] * len(targets)
+        })
+        st.dataframe(target_df, use_container_width=True, hide_index=True)
+    
+    return True
+
+def render_ml_unavailable_message():
+    """Render informative message when ML is unavailable"""
+    st.warning("🤖 ML Prediction Currently Unavailable")
+    
+    # Create informative status card
+    status_color = {
+        "not_found": "#FFA500",
+        "no_joblib": "#FF6B6B", 
+        "error": "#FF4747",
+        "loading": "#4B9BFF"
+    }.get(ML_STATUS, "#888888")
+    
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(135deg, #1A1D24 0%, #252831 100%);
+        border: 2px solid {status_color};
+        border-radius: 15px;
+        padding: 25px;
+        margin: 20px 0;
+        text-align: center;
+    ">
+        <h3 style="color: {status_color}; margin: 0;">
+            🔧 ML Model Status: {ML_STATUS.replace('_', ' ').title()}
+        </h3>
+        <p style="color: #A0A0A0; margin: 15px 0;">
+            {ML_ERROR_MESSAGE}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Show what's available
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**✅ Available Features:**")
+        st.success("""
+        - 📝 Complete call text parsing
+        - 📊 Historical performance analysis
+        - 🎯 Target & stop loss extraction
+        - 📈 Risk-reward calculations
+        - 💾 Database connectivity
+        - 📋 Performance metrics
+        """)
+    
+    with col2:
+        st.markdown("**❌ Unavailable Features:**")
+        st.error("""
+        - 🤖 AI prediction model
+        - 🎯 Price recommendations
+        - 📊 Confidence scoring
+        - 🔮 ML-based analysis
+        - 📈 Dynamic thresholding
+        """)
+    
+    # Troubleshooting guide
+    with st.expander("🔧 Troubleshooting Guide"):
+        st.markdown(f"""
+        ### Current Status: {ML_STATUS}
+        
+        **Possible Solutions:**
+        
+        1. **Model File Missing**: Upload `luxquant_tp_twostage_bundle.joblib` to repository root
+        2. **Library Issues**: Check if joblib and scikit-learn are properly installed
+        3. **Version Compatibility**: Ensure sklearn version matches model training version
+        4. **File Path**: Verify model file is in correct location
+        
+        **For Developers:**
+        ```bash
+        # Check if model file exists
+        ls -la luxquant_tp_twostage_bundle.joblib
+        
+        # Verify Python packages
+        pip list | grep -E "(joblib|scikit-learn)"
+        
+        # Test model loading
+        python -c "from joblib import load; load('luxquant_tp_twostage_bundle.joblib')"
+        ```
+        
+        **Current Error Details:**
+        ```
+        Status: {ML_STATUS}
+        Message: {ML_ERROR_MESSAGE}
+        ```
+        """)
 
 def main():
-    """Main application function"""
+    """Enhanced main application function with comprehensive error handling"""
     render_page_header()
     
-    # Sidebar
+    # Sidebar with ML status
     settings = render_prediction_sidebar()
     
     # Main content
     call_text, analyze_button = render_call_input()
     
     if analyze_button and call_text.strip():
-        with st.spinner("Analyzing trading call..."):
+        with st.spinner("🔍 Analyzing trading call..."):
             
-            # Parse call
+            # Parse call (this always works)
             parsed_call = parse_trading_call_simple(call_text)
             
-            if parsed_call and parsed_call.get('pair'):
-                st.success("✅ Call parsed successfully!")
+            # Display parsing results
+            if render_parsing_results(parsed_call):
                 
-                # ML Prediction
+                st.markdown("---")
+                
+                # ML Prediction Section
                 if ML_BUNDLE:
-                    with st.spinner("Running ML prediction..."):
+                    with st.spinner("🤖 Running ML prediction..."):
                         ml_result = predict_min_tp_from_text(call_text, ML_BUNDLE)
                         render_ml_prediction(ml_result, settings)
-                        st.markdown("---")
                 else:
-                    st.error("❌ ML Model not available")
+                    render_ml_unavailable_message()
                 
-                # Historical Analysis
-                try:
-                    with st.spinner(f"Loading historical data for {parsed_call['pair']}..."):
-                        conn_status = get_connection_status()
-                        if conn_status.get("connected"):
-                            raw_data = load_data()
-                            if raw_data and 'signals' in raw_data:
-                                processed_data = process_signals(raw_data)
-                                historical_data = get_historical_performance(parsed_call['pair'], processed_data)
-                                
-                                if historical_data:
-                                    st.success(f"📈 Found {historical_data['total_signals']} historical signals")
-                                    render_historical_analysis(parsed_call['pair'], historical_data)
+                st.markdown("---")
+                
+                # Historical Analysis (always available if database works)
+                if parsed_call.get('pair'):
+                    try:
+                        with st.spinner(f"📊 Loading historical data for {parsed_call['pair']}..."):
+                            conn_status = get_connection_status()
+                            
+                            if conn_status.get("connected"):
+                                raw_data = load_data()
+                                if raw_data and 'signals' in raw_data:
+                                    processed_data = process_signals(raw_data)
+                                    historical_data = get_historical_performance(parsed_call['pair'], processed_data)
+                                    
+                                    if historical_data and historical_data['closed_trades'] > 0:
+                                        st.success(f"📈 Found {historical_data['total_signals']} historical signals for {parsed_call['pair']}")
+                                        render_historical_analysis(parsed_call['pair'], historical_data)
+                                    else:
+                                        st.info(f"ℹ️ No historical performance data found for {parsed_call['pair']}")
+                                        st.info("This might be a new pair or no closed trades available")
                                 else:
-                                    st.info(f"ℹ️ No historical data found for {parsed_call['pair']}")
+                                    st.warning("⚠️ No signal data available in database")
                             else:
-                                st.info("ℹ️ No signal data available")
-                        else:
-                            st.info("ℹ️ Database not connected - ML prediction only")
-                except Exception:
-                    st.info("ℹ️ Historical analysis unavailable")
+                                st.warning("⚠️ Database not connected")
+                                st.info("Historical analysis requires database connectivity")
+                                if 'error' in conn_status:
+                                    st.error(f"Database error: {conn_status['error']}")
+                                    
+                    except Exception as e:
+                        st.warning(f"⚠️ Historical analysis failed: {str(e)}")
+                        st.info("Analysis will continue with available features")
+                
+                # Additional Analysis Section
+                st.markdown("---")
+                render_additional_analysis(parsed_call)
                 
             else:
-                st.error("❌ Failed to parse trading call")
+                # Parsing failed, show help
+                st.markdown("---")
+                render_parsing_help()
     
     elif analyze_button:
         st.warning("⚠️ Please paste a trading call to analyze")
     
-    # Footer
+    # Footer with model information
+    render_footer()
+
+def render_additional_analysis(parsed_call):
+    """Render additional analysis that doesn't require ML"""
+    st.subheader("📊 Additional Analysis")
+    
+    if not parsed_call.get('parsing_success'):
+        st.info("Additional analysis requires successful call parsing")
+        return
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**💹 Risk-Reward Analysis**")
+        
+        entry = parsed_call.get('entry')
+        targets = parsed_call.get('targets', [])
+        stops = parsed_call.get('stops', [])
+        
+        if entry and targets and stops:
+            # Calculate RR ratios
+            risk = abs(entry - stops[0]) if stops else 0
+            
+            if risk > 0:
+                rr_ratios = []
+                for i, target in enumerate(targets, 1):
+                    reward = abs(target - entry)
+                    rr = reward / risk
+                    rr_ratios.append((f'TP{i}', rr))
+                    st.info(f"**TP{i} RR:** {rr:.2f}")
+                
+                # Best RR
+                if rr_ratios:
+                    best_rr = max(rr_ratios, key=lambda x: x[1])
+                    st.success(f"**Best RR:** {best_rr[0]} = {best_rr[1]:.2f}")
+            else:
+                st.warning("Cannot calculate RR - no stop loss data")
+        else:
+            st.warning("Insufficient data for RR analysis")
+    
+    with col2:
+        st.markdown("**📈 Price Movement Analysis**")
+        
+        if entry and targets:
+            # Calculate percentage movements
+            movements = []
+            for i, target in enumerate(targets, 1):
+                pct_change = ((target - entry) / entry) * 100
+                movements.append((f'TP{i}', pct_change))
+                
+                color = "🟢" if pct_change > 0 else "🔴"
+                st.info(f"**TP{i}:** {color} {pct_change:+.2f}%")
+            
+            # Total potential
+            if movements:
+                total_potential = movements[-1][1]  # Highest target
+                st.success(f"**Total Potential:** {total_potential:+.2f}%")
+        else:
+            st.warning("Insufficient data for movement analysis")
+
+def render_parsing_help():
+    """Render help for parsing issues"""
+    st.subheader("📝 Parsing Help")
+    
+    st.error("❌ Unable to parse the trading call")
+    
+    st.markdown("**✅ Expected Format:**")
+    st.code("""
+🆕 NEW CALL: BTCUSDT 🆕
+
+📊 Risk Analysis 📊
+Volume(24H) Ranked: 15th/517
+Risk Level: 🟢 Normal
+
+**Entry: 45000**
+
+📝 Targets & Stop Loss
+Target 1: 46000
+Target 2: 47000  
+Target 3: 48000
+Target 4: 50000
+Stop Loss 1: 44000
+Stop Loss 2: 43000
+    """)
+    
+    st.markdown("**🔍 Common Issues:**")
+    st.warning("""
+    - Missing pair name (should be like BTCUSDT, ETHUSDT)
+    - Missing entry price
+    - Targets not clearly labeled
+    - Invalid number formats
+    """)
+    
+    st.markdown("**💡 Tips:**")
+    st.info("""
+    - Ensure pair name ends with USDT
+    - Use clear "Entry:", "Target 1:", etc. labels
+    - Include risk level and volume ranking if available
+    - Use standard number formats (decimals with dots)
+    """)
+
+def render_footer():
+    """Render footer with model and app information"""
     st.markdown("---")
-    with st.expander("Model v2 Architecture"):
-        base_th = ML_BUNDLE.get('stageA_threshold', 0.32) if ML_BUNDLE else 0.32
-        policy_band = ML_BUNDLE.get('policy_band', 0.08) if ML_BUNDLE else 0.08
+    
+    with st.expander("ℹ️ Model & App Information"):
+        col1, col2 = st.columns(2)
         
-        st.markdown(f"""
-        ### Enhanced Two-Stage Pipeline v2
+        with col1:
+            st.markdown("### 🤖 ML Model v2 Architecture")
+            if ML_BUNDLE:
+                st.success("**Status:** Loaded ✅")
+                try:
+                    base_th = ML_BUNDLE.get('stageA_threshold', 0.32)
+                    policy_band = ML_BUNDLE.get('policy_band', 0.08)
+                    
+                    st.markdown(f"""
+                    **Model Configuration:**
+                    - Base threshold: {base_th:.3f}
+                    - Policy band: {policy_band:.3f}
+                    - Features: {len(ML_BUNDLE.get('num_cols', [])) + len(ML_BUNDLE.get('cat_cols', []))}
+                    
+                    **Pipeline Stages:**
+                    - Stage A: TP≥1 probability (calibrated)
+                    - Stage B: TP level prediction (1-4)
+                    - Stage C: SL vs No-outcome classification
+                    """)
+                except:
+                    st.info("Model loaded but details unavailable")
+            else:
+                st.error(f"**Status:** {ML_STATUS} ❌")
+                st.info(f"**Details:** {ML_ERROR_MESSAGE}")
         
-        **Key Improvements over v1:**
-        
-        **Architecture:**
-        - Stage-A: Isotonic calibrated TP≥1 probability
-        - Stage-B: Class-weighted TP level (1-4) prediction
-        - Stage-C: Binary SL vs No-outcome for misses
-        
-        **Enhanced Features:**
-        - Target percentages (tp1_pct, tp2_pct, tp3_pct, tp4_pct)
-        - Stop loss percentages (sl1_pct, sl2_pct)
-        - Risk-reward ratios (RR1, RR2, RR3, RR4)
-        - Target spacing, tightness, summary statistics
-        - Volume rank score, risk numeric encoding
-        
-        **Dynamic Thresholding:**
-        - Base threshold: {base_th:.3f}
-        - Policy band: {policy_band:.3f}
-        - Effective adjustment based on volume/risk/TP1 distance
-        
-        **Performance Metrics:**
-        - Strict accuracy: 24.73% (vs ~22-26% v1)
-        - Cumulative: 49.76% (maintained ~49%)
-        - False positive non-hit: 23.53% (reduced from ~24.5%)
-        - Stage-C accuracy: ~90% (stable)
-        
-        **Outputs:**
-        - Recommended price from parsed targets
-        - Percentage change from entry
-        - Calibrated probability scores
-        - Dynamic threshold breakdown
-        - Historical performance comparison
-        """)
+        with col2:
+            st.markdown("### 📊 App Features")
+            st.markdown("""
+            **✅ Always Available:**
+            - Complete call text parsing
+            - Historical performance analysis
+            - Target & stop extraction
+            - Risk-reward calculations
+            - Database connectivity
+            - Performance metrics
+            
+            **🤖 ML-Dependent:**
+            - AI prediction model
+            - Price recommendations  
+            - Confidence scoring
+            - Dynamic thresholding
+            
+            **📈 Performance Metrics:**
+            - Strict accuracy: 24.73%
+            - Cumulative: 49.76%
+            - Stage-C accuracy: ~90%
+            """)
 
 if __name__ == "__main__":
     main()
