@@ -1,24 +1,36 @@
 """
-Fixed modern metrics display components with proper time range support and error handling
+Modern metrics display components for LuxQuant with Blue-Gold theme
+Enhanced with proper time range support and comprehensive error handling
 """
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 
-# Import theme configurations
-try:
-    from config.theme import COLORS, PLOTLY_CONFIG, CHART_CONFIGS
-except ImportError:
-    # Fallback colors if theme file doesn't exist
-    COLORS = {
-        "green": "#00D46A",
-        "red": "#FF4747",
-        "yellow": "#FDB32B",
-        "blue": "#4B9BFF",
-        "purple": "#9D5CFF",
-        "text_muted": "#6B6B6B"
-    }
+# LuxQuant Blue-Gold Theme Colors
+COLORS = {
+    "background": "#0B1426",           # Deep blue background
+    "card_bg": "#1A2332",             # Dark blue-gray cards
+    "green": "#FFD700",               # Gold for positive values
+    "red": "#EF4444",                 # Red for negative
+    "yellow": "#FFD700",              # Gold/yellow
+    "blue": "#3B82F6",                # Primary blue
+    "purple": "#6366F1",              # Indigo purple
+    "text_muted": "#94A3B8",          # Light blue-gray text
+    # Theme specific colors
+    "primary_gold": "#FFD700",        # Main gold accent
+    "secondary_gold": "#FFA500",      # Orange gold
+    "blue_primary": "#1E40AF",        # Primary blue
+    "blue_accent": "#3B82F6",         # Lighter blue
+    "blue_light": "#60A5FA",          # Light blue
+    "success": "#FFD700",             # Gold for success
+    "warning": "#F59E0B",             # Amber warning
+    "error": "#EF4444",               # Red error
+    "text_primary": "#F8FAFC",        # Nearly white text
+    "text_secondary": "#CBD5E1",      # Light gray text
+    "border": "#334155",              # Blue-gray borders
+    "surface": "#1E293B"              # Surface color
+}
 
 def render_winrate_trend(data, filters=None):
     """
@@ -35,16 +47,34 @@ def render_winrate_trend(data, filters=None):
     period_map = {'Daily': 'D', 'Weekly': 'W', 'Monthly': 'M'}
     period_code = period_map.get(chart_period, 'D')
     
-    # Show current settings
+    # Show current settings with blue-gold theme
     col1, col2 = st.columns(2)
     with col1:
         try:
             from data_processing.winrate_calculator import get_time_range_label
-            st.info(f"📅 **Time Range:** {get_time_range_label(time_range)}")
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1A2332 0%, #1E293B 100%);
+                       border: 1px solid #3B82F6; border-radius: 6px; 
+                       padding: 8px; margin: 10px 0; color: #60A5FA;">
+                📅 <strong>Time Range:</strong> {get_time_range_label(time_range)}
+            </div>
+            """, unsafe_allow_html=True)
         except:
-            st.info(f"📅 **Time Range:** {time_range}")
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1A2332 0%, #1E293B 100%);
+                       border: 1px solid #3B82F6; border-radius: 6px; 
+                       padding: 8px; margin: 10px 0; color: #60A5FA;">
+                📅 <strong>Time Range:</strong> {time_range}
+            </div>
+            """, unsafe_allow_html=True)
     with col2:
-        st.info(f"📊 **Chart Period:** {chart_period}")
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1A2332 0%, #1E293B 100%);
+                   border: 1px solid #FFD700; border-radius: 6px; 
+                   padding: 8px; margin: 10px 0; color: #FFD700;">
+            📊 <strong>Chart Period:</strong> {chart_period}
+        </div>
+        """, unsafe_allow_html=True)
     
     # Debug information (can be commented out in production)
     with st.expander("🔍 Debug Info", expanded=False):
@@ -95,7 +125,7 @@ def debug_chart_data(data, time_range):
     st.write(f"**Active Time Range:** {time_range}")
 
 def render_enhanced_winrate_chart(winrate_data, show_ma=True, chart_period="Daily"):
-    """Render enhanced winrate chart with comprehensive error handling"""
+    """Render enhanced winrate chart with blue-gold theme"""
     try:
         if winrate_data is None or winrate_data.empty:
             st.warning("No chart data available")
@@ -122,23 +152,23 @@ def render_enhanced_winrate_chart(winrate_data, show_ma=True, chart_period="Dail
             st.warning("No valid data points for chart")
             return
         
-        # Main winrate trace
+        # Main winrate trace with gold color
         fig.add_trace(go.Scatter(
             x=valid_data['period_date'],
             y=valid_data['winrate'],
             mode='lines+markers',
             name='Win Rate',
             line=dict(
-                color=COLORS['green'],
+                color=COLORS['primary_gold'],
                 width=3
             ),
             marker=dict(
                 size=8,
-                color=COLORS['green'],
+                color=COLORS['primary_gold'],
                 line=dict(color='white', width=1)
             ),
             fill='tonexty',
-            fillcolor='rgba(0, 212, 106, 0.1)',
+            fillcolor='rgba(255, 215, 0, 0.1)',
             hovertemplate='<b>%{x}</b><br>Win Rate: %{y:.1f}%<br>Trades: %{customdata}<extra></extra>',
             customdata=valid_data['total_trades']
         ))
@@ -165,7 +195,7 @@ def render_enhanced_winrate_chart(winrate_data, show_ma=True, chart_period="Dail
                         mode='lines',
                         name=f'{ma_window}-Period MA',
                         line=dict(
-                            color=COLORS['yellow'],
+                            color=COLORS['blue_light'],
                             width=2,
                             dash='dot'
                         ),
@@ -175,7 +205,7 @@ def render_enhanced_winrate_chart(winrate_data, show_ma=True, chart_period="Dail
             except Exception as ma_error:
                 st.warning(f"Moving average calculation failed: {ma_error}")
         
-        # Update layout with responsive design
+        # Update layout with blue-gold theme
         fig.update_layout(
             title=f"Win Rate Trend - {chart_period} View",
             xaxis_title="Date",
@@ -191,19 +221,19 @@ def render_enhanced_winrate_chart(winrate_data, show_ma=True, chart_period="Dail
                 x=1
             ),
             template="plotly_dark",
-            paper_bgcolor="#1A1D24",
-            plot_bgcolor="#1A1D24",
-            font=dict(color="#FFFFFF", family="Inter, sans-serif"),
+            paper_bgcolor=COLORS['card_bg'],
+            plot_bgcolor=COLORS['card_bg'],
+            font=dict(color=COLORS['text_primary'], family="Inter, sans-serif"),
             xaxis=dict(
-                gridcolor="#2D3139",
-                linecolor="#2D3139",
-                tickfont=dict(color="#A0A0A0")
+                gridcolor=COLORS['border'],
+                linecolor=COLORS['border'],
+                tickfont=dict(color=COLORS['text_secondary'])
             ),
             yaxis=dict(
                 range=[0, max(100, valid_data['winrate'].max() + 10)],
-                gridcolor="#2D3139",
-                linecolor="#2D3139",
-                tickfont=dict(color="#A0A0A0")
+                gridcolor=COLORS['border'],
+                linecolor=COLORS['border'],
+                tickfont=dict(color=COLORS['text_secondary'])
             )
         )
         
@@ -218,7 +248,7 @@ def render_enhanced_winrate_chart(winrate_data, show_ma=True, chart_period="Dail
         st.code(f"Error details: {str(e)}")
 
 def render_basic_winrate_fallback(data, time_range='all'):
-    """Basic winrate chart fallback with enhanced error handling"""
+    """Basic winrate chart fallback with blue-gold theme"""
     st.warning("⚠️ Using basic chart (enhanced calculation failed)")
     
     try:
@@ -273,7 +303,7 @@ def render_basic_winrate_fallback(data, time_range='all'):
         daily_stats.columns = ['date', 'wins', 'total']
         daily_stats['winrate'] = (daily_stats['wins'] / daily_stats['total'] * 100).round(1)
         
-        # Create basic chart
+        # Create basic chart with blue-gold theme
         fig = go.Figure()
         
         fig.add_trace(go.Scatter(
@@ -281,13 +311,13 @@ def render_basic_winrate_fallback(data, time_range='all'):
             y=daily_stats['winrate'],
             mode='lines+markers',
             name='Win Rate',
-            line=dict(color=COLORS['green'], width=3),
-            marker=dict(size=6, color=COLORS['green']),
+            line=dict(color=COLORS['primary_gold'], width=3),
+            marker=dict(size=6, color=COLORS['primary_gold']),
             hovertemplate='<b>%{x}</b><br>Win Rate: %{y:.1f}%<br>Trades: %{customdata}<extra></extra>',
             customdata=daily_stats['total']
         ))
         
-        fig.add_hline(y=50, line_dash="dash", line_color="gray", opacity=0.5)
+        fig.add_hline(y=50, line_dash="dash", line_color=COLORS['text_muted'], opacity=0.5)
         
         fig.update_layout(
             title=f"Basic Win Rate Trend ({time_range})",
@@ -295,26 +325,41 @@ def render_basic_winrate_fallback(data, time_range='all'):
             yaxis_title="Win Rate (%)",
             height=350,
             template="plotly_dark",
-            paper_bgcolor="#1A1D24",
-            plot_bgcolor="#1A1D24",
-            font=dict(color="#FFFFFF")
+            paper_bgcolor=COLORS['card_bg'],
+            plot_bgcolor=COLORS['card_bg'],
+            font=dict(color=COLORS['text_primary'])
         )
         
         st.plotly_chart(fig, use_container_width=True)
         
-        # Basic summary
+        # Basic summary with themed cards
         if not daily_stats.empty:
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Latest Win Rate", f"{daily_stats['winrate'].iloc[-1]:.1f}%")
+                render_mini_metric_card("Latest Win Rate", f"{daily_stats['winrate'].iloc[-1]:.1f}%", COLORS['primary_gold'])
             with col2:
-                st.metric("Average Win Rate", f"{daily_stats['winrate'].mean():.1f}%")
+                render_mini_metric_card("Average Win Rate", f"{daily_stats['winrate'].mean():.1f}%", COLORS['blue_accent'])
             with col3:
-                st.metric("Total Periods", f"{len(daily_stats)}")
+                render_mini_metric_card("Total Periods", f"{len(daily_stats)}", COLORS['purple'])
         
     except Exception as e:
         st.error(f"Basic chart failed: {e}")
         st.code(f"Fallback error: {str(e)}")
+
+def render_mini_metric_card(label, value, color):
+    """Render small metric card"""
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+               border: 1px solid {COLORS['border']}; border-radius: 8px; 
+               padding: 12px; text-align: center;">
+        <p style="color: {COLORS['text_secondary']}; font-size: 11px; margin: 0; text-transform: uppercase;">
+            {label}
+        </p>
+        <p style="color: {color}; font-size: 18px; font-weight: bold; margin: 5px 0 0 0;">
+            {value}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 def apply_basic_time_filter(df, time_range):
     """Apply basic time filtering"""
@@ -339,7 +384,7 @@ def apply_basic_time_filter(df, time_range):
         return df
 
 def render_trend_summary(winrate_data, time_range='all'):
-    """Render trend summary with proper error handling"""
+    """Render trend summary with blue-gold theme"""
     if winrate_data is None or winrate_data.empty:
         return
         
@@ -354,33 +399,37 @@ def render_trend_summary(winrate_data, time_range='all'):
         with col1:
             color = get_winrate_color(current_wr)
             st.markdown(f"""
-            <div style="text-align: center;">
-                <p style="color: #A0A0A0; font-size: 11px;">CURRENT</p>
-                <p style="color: {color}; font-size: 20px; font-weight: 700;">{current_wr:.1f}%</p>
+            <div style="text-align: center; background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+                       border: 1px solid {COLORS['border']}; border-radius: 8px; padding: 15px;">
+                <p style="color: {COLORS['text_muted']}; font-size: 11px; margin: 0;">CURRENT</p>
+                <p style="color: {color}; font-size: 20px; font-weight: 700; margin: 5px 0 0 0;">{current_wr:.1f}%</p>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             st.markdown(f"""
-            <div style="text-align: center;">
-                <p style="color: #A0A0A0; font-size: 11px;">AVERAGE</p>
-                <p style="color: {COLORS['blue']}; font-size: 20px; font-weight: 700;">{avg_wr:.1f}%</p>
+            <div style="text-align: center; background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+                       border: 1px solid {COLORS['border']}; border-radius: 8px; padding: 15px;">
+                <p style="color: {COLORS['text_muted']}; font-size: 11px; margin: 0;">AVERAGE</p>
+                <p style="color: {COLORS['blue_accent']}; font-size: 20px; font-weight: 700; margin: 5px 0 0 0;">{avg_wr:.1f}%</p>
             </div>
             """, unsafe_allow_html=True)
         
         with col3:
             st.markdown(f"""
-            <div style="text-align: center;">
-                <p style="color: #A0A0A0; font-size: 11px;">PEAK</p>
-                <p style="color: {COLORS['green']}; font-size: 20px; font-weight: 700;">{max_wr:.1f}%</p>
+            <div style="text-align: center; background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+                       border: 1px solid {COLORS['border']}; border-radius: 8px; padding: 15px;">
+                <p style="color: {COLORS['text_muted']}; font-size: 11px; margin: 0;">PEAK</p>
+                <p style="color: {COLORS['primary_gold']}; font-size: 20px; font-weight: 700; margin: 5px 0 0 0;">{max_wr:.1f}%</p>
             </div>
             """, unsafe_allow_html=True)
         
         with col4:
             st.markdown(f"""
-            <div style="text-align: center;">
-                <p style="color: #A0A0A0; font-size: 11px;">LOWEST</p>
-                <p style="color: {COLORS['red']}; font-size: 20px; font-weight: 700;">{min_wr:.1f}%</p>
+            <div style="text-align: center; background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+                       border: 1px solid {COLORS['border']}; border-radius: 8px; padding: 15px;">
+                <p style="color: {COLORS['text_muted']}; font-size: 11px; margin: 0;">LOWEST</p>
+                <p style="color: {COLORS['red']}; font-size: 20px; font-weight: 700; margin: 5px 0 0 0;">{min_wr:.1f}%</p>
             </div>
             """, unsafe_allow_html=True)
         
@@ -399,7 +448,7 @@ def render_trend_summary(winrate_data, time_range='all'):
         st.error(f"Trend summary failed: {e}")
 
 def render_trend_indicator(trend_info):
-    """Render trend direction indicator"""
+    """Render trend direction indicator with blue-gold theme"""
     trend_icons = {
         'strongly_improving': '🚀',
         'improving': '📈',
@@ -409,22 +458,24 @@ def render_trend_indicator(trend_info):
     }
     
     trend_colors = {
-        'strongly_improving': COLORS['green'],
-        'improving': COLORS['green'],
-        'stable': COLORS['yellow'],
+        'strongly_improving': COLORS['primary_gold'],
+        'improving': COLORS['primary_gold'],
+        'stable': COLORS['blue_accent'],
         'declining': COLORS['red'],
         'strongly_declining': COLORS['red']
     }
     
     trend_icon = trend_icons.get(trend_info['trend'], '📊')
-    trend_color = trend_colors.get(trend_info['trend'], COLORS['yellow'])
+    trend_color = trend_colors.get(trend_info['trend'], COLORS['blue_accent'])
     
     st.markdown(f"""
-    <div style="text-align: center; margin-top: 15px; padding: 10px; background-color: rgba(255,255,255,0.05); border-radius: 8px;">
+    <div style="text-align: center; margin-top: 15px; padding: 12px; 
+               background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+               border: 1px solid {COLORS['border']}; border-radius: 8px;">
         <p style="color: {trend_color}; font-size: 16px; margin: 0;">
             {trend_icon} <strong>{trend_info['trend'].replace('_', ' ').title()}</strong>
         </p>
-        <p style="color: #A0A0A0; font-size: 12px; margin: 5px 0 0 0;">
+        <p style="color: {COLORS['text_muted']}; font-size: 12px; margin: 5px 0 0 0;">
             Slope: {trend_info['slope']:.3f}%/period
         </p>
     </div>
@@ -433,14 +484,14 @@ def render_trend_indicator(trend_info):
 def get_winrate_color(winrate):
     """Get color based on winrate"""
     if winrate >= 60:
-        return COLORS['green']
+        return COLORS['primary_gold']
     elif winrate >= 40:
-        return COLORS['yellow']
+        return COLORS['blue_accent']
     else:
         return COLORS['red']
 
 def render_summary_cards(data, filters=None):
-    """Render summary metrics with proper time range support"""
+    """Render summary metrics with blue-gold theme"""
     st.markdown("## 📊 Performance Overview")
     
     # Get time range for metrics calculation
@@ -457,13 +508,13 @@ def render_summary_cards(data, filters=None):
             "Total Signals",
             f"{metrics['total_signals']:,}",
             f"📈 Active: {metrics['active_pairs']} pairs",
-            COLORS['blue']
+            COLORS['blue_accent']
         )
     
     with col2:
         render_metric_card(
             "Overall Win Rate",
-            f"{metrics['win_rate']:.1f}%",
+            f"{metrics['win_rate']:.2f}%",
             get_winrate_delta(metrics['win_rate']),
             get_winrate_color(metrics['win_rate'])
         )
@@ -471,7 +522,7 @@ def render_summary_cards(data, filters=None):
     with col3:
         render_metric_card(
             "Completion Rate",
-            f"{metrics['completion_rate']:.1f}%",
+            f"{metrics['completion_rate']:.2f}%",
             f"🎯 {metrics['closed_trades']} closed",
             COLORS['purple']
         )
@@ -484,27 +535,43 @@ def render_summary_cards(data, filters=None):
             get_rr_color(metrics['avg_rr'])
         )
     
-
-    
     # Show time range indicator
     if time_range != 'all':
         try:
             from data_processing.winrate_calculator import get_time_range_label
-            st.info(f"📅 Metrics calculated for: **{get_time_range_label(time_range)}**")
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+                       border: 1px solid {COLORS['blue_accent']}; border-radius: 6px; 
+                       padding: 10px; margin: 15px 0; color: {COLORS['blue_light']}; text-align: center;">
+                📅 <strong>Metrics calculated for:</strong> {get_time_range_label(time_range)}
+            </div>
+            """, unsafe_allow_html=True)
         except:
-            st.info(f"📅 Metrics calculated for: **{time_range}**")
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+                       border: 1px solid {COLORS['blue_accent']}; border-radius: 6px; 
+                       padding: 10px; margin: 15px 0; color: {COLORS['blue_light']}; text-align: center;">
+                📅 <strong>Metrics calculated for:</strong> {time_range}
+            </div>
+            """, unsafe_allow_html=True)
 
 def render_metric_card(label, value, delta, color):
-    """Render individual metric card"""
+    """Render individual metric card with blue-gold theme"""
     st.markdown(f"""
-    <div class="metric-card">
-        <p style="color: #A0A0A0; font-size: 12px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">
+    <div style="background: linear-gradient(135deg, {COLORS['card_bg']} 0%, {COLORS['surface']} 100%);
+               border: 1px solid {COLORS['border']}; border-radius: 12px; 
+               padding: 20px; text-align: center;
+               box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(59, 130, 246, 0.1);
+               backdrop-filter: blur(12px); transition: all 0.3s ease;">
+        <p style="color: {COLORS['text_secondary']}; font-size: 12px; margin: 0; 
+                  text-transform: uppercase; letter-spacing: 1px; font-weight: 500;">
             {label}
         </p>
-        <h2 style="color: {color}; margin: 8px 0; font-size: 28px; font-weight: 700;">
+        <h2 style="color: {color}; margin: 8px 0; font-size: 28px; font-weight: 700;
+                   text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);">
             {value}
         </h2>
-        <p style="color: #6B6B6B; font-size: 11px; margin: 0;">
+        <p style="color: {COLORS['text_muted']}; font-size: 11px; margin: 0;">
             {delta}
         </p>
     </div>
@@ -620,9 +687,9 @@ def get_winrate_delta(winrate):
 def get_rr_color(rr):
     """Get color based on RR ratio"""
     if rr >= 3:
-        return COLORS['green']
+        return COLORS['primary_gold']
     elif rr >= 2:
-        return COLORS['yellow']
+        return COLORS['blue_accent']
     else:
         return COLORS['red']
 
@@ -636,3 +703,122 @@ def get_rr_indicator(rr):
         return "⚠️ Low"
     else:
         return "❌ Very Low"
+
+def render_rolling_winrate_chart(data, filters=None):
+    """Render rolling winrate chart with blue-gold theme"""
+    st.subheader("📈 Rolling Win Rate Analysis")
+    
+    if data is None or data.empty:
+        st.warning("No data available for rolling analysis")
+        return
+    
+    # Get time range filter
+    time_range = filters.get('time_range', 'all') if filters else 'all'
+    
+    # Apply time range filter
+    if time_range != 'all':
+        try:
+            from data_processing.winrate_calculator import apply_time_range_filter
+            filtered_data = apply_time_range_filter(data, time_range, 'created_at')
+        except ImportError:
+            filtered_data = data
+    else:
+        filtered_data = data
+    
+    if filtered_data is None or filtered_data.empty:
+        st.warning("No data available after filtering")
+        return
+    
+    # Filter closed trades
+    closed_data = filtered_data[
+        filtered_data['final_outcome'].notna() & 
+        (filtered_data['final_outcome'] != 'open')
+    ].copy()
+    
+    if closed_data.empty:
+        st.warning("No closed trades for rolling analysis")
+        return
+    
+    # Sort by date and calculate rolling metrics
+    closed_data['created_at'] = pd.to_datetime(closed_data['created_at'], errors='coerce')
+    closed_data = closed_data.sort_values('created_at').reset_index(drop=True)
+    closed_data['is_winner'] = closed_data['final_outcome'].str.startswith('tp', na=False)
+    
+    # Calculate different rolling windows
+    windows = [10, 30, 50]
+    fig = go.Figure()
+    
+    for window in windows:
+        if len(closed_data) >= window:
+            closed_data[f'rolling_wr_{window}'] = closed_data['is_winner'].rolling(window=window, min_periods=5).mean() * 100
+            
+            # Color based on window size
+            if window == 10:
+                color = COLORS['primary_gold']
+                dash = 'solid'
+            elif window == 30:
+                color = COLORS['blue_accent']
+                dash = 'dash'
+            else:
+                color = COLORS['purple']
+                dash = 'dot'
+            
+            fig.add_trace(go.Scatter(
+                x=closed_data['created_at'],
+                y=closed_data[f'rolling_wr_{window}'],
+                mode='lines',
+                name=f'{window}-Trade Rolling WR',
+                line=dict(color=color, width=2, dash=dash),
+                hovertemplate=f'<b>%{{x}}</b><br>{window}-Trade WR: %{{y:.1f}}%<extra></extra>'
+            ))
+    
+    # Add 50% reference line
+    fig.add_hline(y=50, line_dash="dash", line_color=COLORS['text_muted'], opacity=0.5)
+    
+    fig.update_layout(
+        title="Rolling Win Rate Analysis",
+        xaxis_title="Date",
+        yaxis_title="Rolling Win Rate (%)",
+        template="plotly_dark",
+        paper_bgcolor=COLORS['card_bg'],
+        plot_bgcolor=COLORS['card_bg'],
+        height=400,
+        font=dict(color=COLORS['text_primary']),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        xaxis=dict(
+            gridcolor=COLORS['border'],
+            linecolor=COLORS['border'],
+            tickfont=dict(color=COLORS['text_secondary'])
+        ),
+        yaxis=dict(
+            gridcolor=COLORS['border'],
+            linecolor=COLORS['border'],
+            tickfont=dict(color=COLORS['text_secondary'])
+        )
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Show rolling stats summary
+    if len(closed_data) >= 30:
+        col1, col2, col3 = st.columns(3)
+        
+        current_30_wr = closed_data['rolling_wr_30'].dropna().iloc[-1] if not closed_data['rolling_wr_30'].dropna().empty else 0
+        
+        with col1:
+            render_mini_metric_card("Current 30-Trade WR", f"{current_30_wr:.1f}%", get_winrate_color(current_30_wr))
+        
+        with col2:
+            avg_30_wr = closed_data['rolling_wr_30'].dropna().mean() if not closed_data['rolling_wr_30'].dropna().empty else 0
+            render_mini_metric_card("Avg 30-Trade WR", f"{avg_30_wr:.1f}%", COLORS['blue_accent'])
+        
+        with col3:
+            volatility = closed_data['rolling_wr_30'].dropna().std() if not closed_data['rolling_wr_30'].dropna().empty else 0
+            render_mini_metric_card("Volatility", f"{volatility:.1f}%", COLORS['purple'])

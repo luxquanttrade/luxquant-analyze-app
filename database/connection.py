@@ -14,22 +14,23 @@ except ImportError:
     POSTGRES_AVAILABLE = False
 
 def get_connection_string():
-    """Get database connection string from environment or secrets"""
-    # For testing, use direct connection with correct port
-    return "postgresql://luxq:ukCjpVAkqpeExAiLcFNETgmP@127.0.0.1:5433/luxquant"
-    
-    # Try Streamlit secrets first
+    """Get database connection string from secrets atau ENV; fallback terakhir ke localhost:5433."""
+    # 1) Streamlit secrets (jika kamu pakai .streamlit/secrets.toml)
     try:
-        return st.secrets["database"]["connection_url"]
-    except:
+        url = st.secrets["database"]["connection_url"]
+        if url:
+            return url
+    except Exception:
         pass
-    
-    # Try environment variable
+
+    # 2) ENV (diset di systemd)
     db_url = os.getenv("DATABASE_URL")
     if db_url:
         return db_url
-    
-    return None
+
+    # 3) Fallback lokal (VPS yang sama). Boleh pertahankan sebagai cadangan.
+    return "postgresql://luxq:ukCjpVAkqpeExAiLcFNETgmP@127.0.0.1:5433/luxquant"
+
 
 def get_connection_status():
     """Check database connection status"""
